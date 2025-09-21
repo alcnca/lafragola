@@ -1,0 +1,401 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Pedidos por WhatsApp – La Fragola</title>
+<style>
+  :root{--b:#111;--br:#e5e5e5}
+  body{font-family:system-ui,Arial,Segoe UI,Roboto;margin:16px;max-width:860px}
+  h1{margin:0 0 8px}
+  .muted{color:#666;font-size:13px}
+  .card{border:1px solid var(--br);border-radius:14px;padding:14px;margin:12px 0}
+  .row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  label{font-size:13px;color:#333;margin-bottom:6px;display:block}
+  input,select,button{padding:10px;border-radius:10px;border:1px solid var(--br);width:100%}
+  select{background:#fff}
+  .btn{background:var(--b);color:#fff;border:0;cursor:pointer}
+  .btn-ghost{background:#fff;border:1px solid var(--br);cursor:pointer}
+  .qty{display:flex;gap:8px;align-items:center;justify-content:center}
+  .qty button{width:36px;height:36px}
+  .flex{display:flex;gap:10px;flex-wrap:wrap}
+  .chip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--br);padding:6px 10px;border-radius:999px;background:#fff;cursor:pointer}
+  .chip input{margin:0}
+  .helper{font-size:12px;color:#555}
+  .cart{display:flex;flex-direction:column;gap:10px}
+  .cart-item{display:grid;grid-template-columns:1fr 90px 110px 84px;gap:8px;align-items:center}
+  .cart-head{font-weight:600;color:#333}
+  .line{display:flex;justify-content:space-between;border-top:1px dashed var(--br);padding-top:12px;margin-top:12px}
+  .price{font-variant-numeric:tabular-nums}
+  .hint{font-size:12px;color:#888;margin-top:6px}
+</style>
+</head>
+<body>
+<h1>La Fragola – Pedido</h1>
+<p class="muted">Arma tu pedido, revisa el total y envíalo por WhatsApp. 🍓🥤🧇</p>
+
+<!-- Datos del cliente -->
+<div class="card">
+  <div class="row">
+    <div>
+      <label>Tu nombre (opcional)</label>
+      <input id="nombre" placeholder="Ej. Alonso">
+    </div>
+    <div>
+      <label>Notas (opcional)</label>
+      <input id="nota" placeholder="Sin azúcar, poca hiel, etc.">
+    </div>
+  </div>
+</div>
+
+<!-- Constructor -->
+<div class="card">
+  <div class="row">
+    <div>
+      <label>Tipo de producto</label>
+      <select id="tipo">
+        <option value="machacado">Machacado ($50)</option>
+        <option value="frappe">Frappé</option>
+        <option value="smoothie">Smoothie ($60)</option>
+        <option value="fresas">Fresas con Crema ($55 / $60)</option>
+        <option value="cw">Crepa / Waffle (2 toppings) $60</option>
+      </select>
+    </div>
+
+    <div id="wrapCategoria" style="display:none">
+      <label>Categoría (Frappé)</label>
+      <select id="categoria">
+        <option value="clasicos">Clásicos ($60)</option>
+        <option value="especiales">Especiales ($70)</option>
+        <option value="casa">De la casa ($80)</option>
+      </select>
+    </div>
+
+    <div id="wrapFresas" style="display:none">
+      <label>Tipo (Fresas con Crema)</label>
+      <select id="tipoFresa">
+        <option value="normal">Normal ($55)</option>
+        <option value="especial">Especial ($60) con toppings</option>
+      </select>
+    </div>
+
+    <div id="wrapCW" style="display:none">
+      <label>Base</label>
+      <select id="baseCW">
+        <option value="Crepa">Crepa</option>
+        <option value="Waffle">Waffle</option>
+      </select>
+    </div>
+
+    <div>
+      <label id="labelSabor">Sabor</label>
+      <select id="sabor"></select>
+      <div id="hintSabor" class="hint"></div>
+    </div>
+  </div>
+
+  <!-- Toppings (para Fresas Especiales y Crepa/Waffle) -->
+  <div id="wrapToppings" style="display:none; margin-top:12px">
+    <label>Toppings</label>
+    <div id="toppings" class="flex"></div>
+    <div id="topHelp" class="helper"></div>
+  </div>
+
+  <div class="row" style="margin-top:10px">
+    <div class="qty">
+      <button class="btn-ghost" id="menos">–</button>
+      <span id="cantidad" style="min-width:28px;text-align:center">1</span>
+      <button class="btn-ghost" id="mas">+</button>
+    </div>
+    <button class="btn" id="add">+ Agregar al pedido</button>
+  </div>
+  <p class="muted" id="precioRef" style="margin-top:10px"></p>
+</div>
+
+<!-- Carrito -->
+<div class="card">
+  <div class="cart">
+    <div class="cart-item cart-head">
+      <div>Producto</div><div>Precio</div><div>Cantidad</div><div>Quitar</div>
+    </div>
+    <div id="cartBody"></div>
+  </div>
+  <div class="line">
+    <strong>Total</strong>
+    <strong id="total" class="price">$0.00</strong>
+  </div>
+  <div style="margin-top:10px;display:flex;gap:10px;flex-wrap:wrap">
+    <button class="btn" id="send">Enviar por WhatsApp</button>
+    <button class="btn-ghost" id="clear">Vaciar</button>
+  </div>
+</div>
+
+<script>
+const PHONE_NUMBER = "5219858527860"; // <-- CAMBIA a tu número
+
+/* ------------------ Configuración de productos ------------------ */
+const PRECIOS = {
+  machacado: 50,
+  smoothie: 60,
+  fresas: { normal: 55, especial: 60 },
+  cw: 60, // Crepa/Waffle
+  frappe: { clasicos: 60, especiales: 70, casa: 80 }
+};
+
+const SABORES = {
+  machacado: [
+    "Fresa","Plátano","Mango","Coco","Durazno",
+    "Galleta Oreo","Nutella","Chokis","Emperador","Fruta de temporada"
+  ],
+  smoothie: [
+    "Mango 🥭","Fresa 🍓","Tamarindo","Limón 🍋","Fruta de temporada 🌸"
+  ],
+  frappe: {
+    clasicos: ["Mamut","Gansito","Oreo","Chokis","Hershey’s","Capuchino ☕"],
+    especiales: ["Carlos V","Mazapán","Chocolate Abuelita","Nucita","Cacahuate 🥜","Nutella"],
+    casa: ["Queso de Bola 🧀","Pay de Limón 🍋"]
+  }
+};
+
+const TOPPINGS = [
+  "Nutella","Miel 🍯","Lechera","Hershey’s","Plátano 🍌",
+  "Fresa 🍓","Mermelada","Queso de bola 🧀",
+  "Queso Philadelphia","Crema de cacahuate 🥜","Mazapán"
+];
+
+/* ------------------ Elementos del DOM ------------------ */
+const tipoEl = document.getElementById('tipo');
+const wrapCat = document.getElementById('wrapCategoria');
+const catEl  = document.getElementById('categoria');
+
+const wrapFresas = document.getElementById('wrapFresas');
+const tipoFresaEl = document.getElementById('tipoFresa');
+
+const wrapCW = document.getElementById('wrapCW');
+const baseCWEl = document.getElementById('baseCW');
+
+const saborEl= document.getElementById('sabor');
+const labelSabor = document.getElementById('labelSabor');
+const precioRef = document.getElementById('precioRef');
+const hintSabor = document.getElementById('hintSabor');
+
+const wrapToppings = document.getElementById('wrapToppings');
+const toppingsEl = document.getElementById('toppings');
+const topHelp = document.getElementById('topHelp');
+
+const menos = document.getElementById('menos');
+const mas   = document.getElementById('mas');
+const cantEl= document.getElementById('cantidad');
+const addBtn= document.getElementById('add');
+
+const cartBody = document.getElementById('cartBody');
+const totalEl  = document.getElementById('total');
+
+const nombreEl= document.getElementById('nombre');
+const notaEl  = document.getElementById('nota');
+const sendBtn = document.getElementById('send');
+const clearBtn= document.getElementById('clear');
+
+/* ------------------ Estado ------------------ */
+let cantidad = 1;
+const cart = []; // {etiqueta, precioUnit, qty}
+
+/* ------------------ Utilidades ------------------ */
+function setCantidad(n){ cantidad = Math.max(1,n); cantEl.textContent = cantidad; }
+
+function renderToppings(maxSel){
+  toppingsEl.innerHTML = "";
+  TOPPINGS.forEach(t=>{
+    const chip = document.createElement('label');
+    chip.className = "chip";
+    chip.innerHTML = `<input type="checkbox" value="${t}"><span>${t}</span>`;
+    toppingsEl.appendChild(chip);
+  });
+  // Límite de selección
+  function enforce(){
+    const checks = toppingsEl.querySelectorAll('input[type=checkbox]');
+    const curr = [...checks].filter(c=>c.checked);
+    checks.forEach(c=>{ c.disabled = (!c.checked && curr.length >= maxSel); });
+    topHelp.textContent = `Selecciona hasta ${maxSel} toppings`;
+  }
+  toppingsEl.addEventListener('change', enforce);
+  enforce();
+}
+
+function getSelectedToppings(){
+  return [...toppingsEl.querySelectorAll('input[type=checkbox]:checked')].map(c=>c.value);
+}
+
+function fillSabores(){
+  saborEl.innerHTML = "";
+  hintSabor.textContent = "";
+  if(tipoEl.value === "machacado"){
+    SABORES.machacado.forEach(s=>saborEl.append(new Option(s,s)));
+    labelSabor.textContent = "Sabor (Machacado)";
+    precioRef.textContent = `Precio unitario: $${PRECIOS.machacado.toFixed(2)}`;
+  } else if (tipoEl.value === "smoothie"){
+    SABORES.smoothie.forEach(s=>saborEl.append(new Option(s,s)));
+    labelSabor.textContent = "Sabor (Smoothie)";
+    precioRef.textContent = `Precio unitario: $${PRECIOS.smoothie.toFixed(2)}`;
+  } else if (tipoEl.value === "frappe"){
+    const cat = catEl.value;
+    SABORES.frappe[cat].forEach(s=>saborEl.append(new Option(s,s)));
+    labelSabor.textContent = `Sabor (Frappé ${catEl.options[catEl.selectedIndex].text})`;
+    precioRef.textContent = `Precio unitario: $${PRECIOS.frappe[cat].toFixed(2)}`;
+  } else if (tipoEl.value === "fresas"){
+    saborEl.append(new Option("Fresas con Crema","Fresas con Crema"));
+    labelSabor.textContent = "Presentación";
+    const p = PRECIOS.fresas[tipoFresaEl.value];
+    precioRef.textContent = `Precio unitario: $${p.toFixed(2)}`;
+    hintSabor.textContent = (tipoFresaEl.value==="especial") ? "Incluye toppings (elige hasta 2)" : "";
+  } else if (tipoEl.value === "cw"){
+    saborEl.append(new Option("Crepas & Waffles","Crepas & Waffles"));
+    labelSabor.textContent = "Producto";
+    precioRef.textContent = `Precio unitario: $${PRECIOS.cw.toFixed(2)} (incluye 2 toppings)`;
+    hintSabor.textContent = "Elige Crepa o Waffle y 2 toppings.";
+  }
+}
+
+function toggleGroups(){
+  wrapCat.style.display = (tipoEl.value === "frappe") ? "" : "none";
+  wrapFresas.style.display = (tipoEl.value === "fresas") ? "" : "none";
+  wrapCW.style.display = (tipoEl.value === "cw") ? "" : "none";
+
+  // Toppings visibles solo en Fresas Especiales o Crepa/Waffle
+  if (tipoEl.value === "fresas" && tipoFresaEl.value === "especial"){
+    wrapToppings.style.display = "";
+    renderToppings(2); // hasta 2 para Fresas Especiales
+  } else if (tipoEl.value === "cw"){
+    wrapToppings.style.display = "";
+    renderToppings(2); // exactamente/o hasta 2
+  } else {
+    wrapToppings.style.display = "none";
+    toppingsEl.innerHTML = "";
+    topHelp.textContent = "";
+  }
+
+  fillSabores();
+}
+
+/* ------------------ Carrito ------------------ */
+function addToCart(){
+  let etiqueta = "", precioUnit = 0;
+
+  if(tipoEl.value==="machacado"){
+    precioUnit = PRECIOS.machacado;
+    etiqueta = `Machacado (${saborEl.value})`;
+  } else if (tipoEl.value==="smoothie"){
+    precioUnit = PRECIOS.smoothie;
+    etiqueta = `Smoothie (${saborEl.value})`;
+  } else if (tipoEl.value==="frappe"){
+    const cat = catEl.value; // clasicos|especiales|casa
+    precioUnit = PRECIOS.frappe[cat];
+    const nombreCat = catEl.options[catEl.selectedIndex].text;
+    etiqueta = `Frappé ${nombreCat} (${saborEl.value})`;
+  } else if (tipoEl.value==="fresas"){
+    const modalidad = tipoFresaEl.value; // normal | especial
+    precioUnit = PRECIOS.fresas[modalidad];
+    const tops = (modalidad==="especial") ? getSelectedToppings() : [];
+    etiqueta = `Fresas con Crema ${modalidad==="especial" ? "Especial" : "Normal"}` + (tops.length? ` [${tops.join(", ")}]`:"");
+  } else if (tipoEl.value==="cw"){
+    precioUnit = PRECIOS.cw;
+    const base = baseCWEl.value; // Crepa | Waffle
+    const tops = getSelectedToppings();
+    if(tops.length===0){ alert("Elige hasta 2 toppings."); return; }
+    if(tops.length>2){ alert("Solo se permiten 2 toppings incluidos."); return; }
+    etiqueta = `${base} (2 toppings) [${tops.join(", ")}]`;
+  }
+
+  // Si misma etiqueta y precio, acumular
+  const idx = cart.findIndex(i => i.etiqueta===etiqueta && i.precioUnit===precioUnit);
+  if(idx>-1){ cart[idx].qty += cantidad; }
+  else { cart.push({etiqueta, precioUnit, qty:cantidad}); }
+  renderCart();
+}
+
+function renderCart(){
+  cartBody.innerHTML = "";
+  cart.forEach((item, i)=>{
+    const row = document.createElement('div');
+    row.className = "cart-item";
+    row.innerHTML = `
+      <div>${item.etiqueta}</div>
+      <div class="price">$${item.precioUnit.toFixed(2)}</div>
+      <div class="qty">
+        <button data-i="${i}" data-act="-">–</button>
+        <span style="min-width:28px;text-align:center">${item.qty}</span>
+        <button data-i="${i}" data-act="+">+</button>
+      </div>
+      <div><button class="btn-ghost" data-i="${i}" data-act="x">Quitar</button></div>
+    `;
+    cartBody.appendChild(row);
+  });
+  cartBody.addEventListener('click', onCartClick, { once:true });
+  updateTotal();
+}
+
+function onCartClick(e){
+  const b = e.target.closest('button');
+  if(!b) return;
+  const i = +b.dataset.i;
+  const act = b.dataset.act;
+  if(act==="+") cart[i].qty++;
+  if(act==="-" && cart[i].qty>1) cart[i].qty--;
+  if(act==="x") cart.splice(i,1);
+  renderCart();
+}
+
+function updateTotal(){
+  const total = cart.reduce((s,i)=>s + i.precioUnit * i.qty, 0);
+  totalEl.textContent = `$${total.toFixed(2)}`;
+}
+
+/* ------------------ WhatsApp ------------------ */
+function buildWhatsAppText(){
+  const lineas = [];
+  lineas.push("Hola, quiero hacer este pedido:");
+  const nombre = nombreEl.value.trim();
+  const nota   = notaEl.value.trim();
+  if(nombre) lineas.push(`Nombre: ${nombre}`);
+  if(nota)   lineas.push(`Notas: ${nota}`);
+  lineas.push("");
+
+  cart.forEach(i=>{
+    lineas.push(`• ${i.qty} × ${i.etiqueta} — $${(i.precioUnit*i.qty).toFixed(2)}`);
+  });
+
+  lineas.push("");
+  lineas.push(`Total: ${totalEl.textContent}`);
+  return encodeURIComponent(lineas.join("\n"));
+}
+
+function openWhatsApp(){
+  if(cart.length===0) { alert("Tu carrito está vacío."); return; }
+  const texto = buildWhatsAppText();
+  const url = /Mobi|Android|iPhone/i.test(navigator.userAgent)
+    ? `https://wa.me/${PHONE_NUMBER}?text=${texto}`
+    : `https://web.whatsapp.com/send?phone=${PHONE_NUMBER}&text=${texto}`;
+  window.open(url, "_blank");
+}
+
+/* ------------------ Eventos ------------------ */
+function init(){
+  tipoEl.addEventListener('change', toggleGroups);
+  catEl.addEventListener('change', fillSabores);
+  tipoFresaEl.addEventListener('change', toggleGroups);
+  baseCWEl.addEventListener('change', ()=>{});
+  menos.addEventListener('click', ()=>setCantidad(cantidad-1));
+  mas.addEventListener('click', ()=>setCantidad(cantidad+1));
+  addBtn.addEventListener('click', addToCart);
+  sendBtn.addEventListener('click', openWhatsApp);
+  clearBtn.addEventListener('click', ()=>{ cart.length=0; renderCart(); });
+
+  toggleGroups(); // inicializa visibilidad
+  setCantidad(1);
+  renderCart();
+}
+
+init();
+</script>
+</body>
+</html>
